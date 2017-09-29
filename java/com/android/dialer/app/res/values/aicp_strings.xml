@@ -16,6 +16,21 @@
      limitations under the License.
 -->
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+    <string name="other_settings_label">Other settings</string>
+
+    <!-- InCall vibration settings -->
+    <string name="incall_vibration_category_key" translatable="false">dialer_general_incall_vibration_category_key</string>
+    <string name="incall_vibration_category_title">In-call vibration</string>
+    <string name="incall_vibrate_outgoing_key" translatable="false">incall_vibrate_outgoing</string>
+    <string name="incall_vibrate_outgoing_title">Vibrate on answer</string>
+    <string name="incall_vibrate_call_waiting_key" translatable="false">incall_vibrate_call_waiting</string>
+    <string name="incall_vibrate_call_waiting_title">Vibrate on call waiting</string>
+    <string name="incall_vibrate_hangup_key" translatable="false">incall_vibrate_hangup</string>
+    <string name="incall_vibrate_hangup_title">Vibrate on hang up</string>
+    <string name="incall_vibrate_45_key" translatable="false">incall_vibrate_45secs</string>
+    <string name="incall_vibrate_45_title">Vibrate every minute</string>
+    <string name="incall_vibrate_45_summary">Vibrates at the 45 second mark of every minute during outgoing calls</string>
+
     <!-- Smart Options -->
     <string name="smart_category_title">Other options</string>
     <string name="smart_mute_title">Smart mute</string>
@@ -30,5 +45,9 @@
     <string name="prox_auto_speaker_delay_summary">Speakerphone will be activated in <xliff:g id="number">%d</xliff:g> ms</string>
     <string name="prox_auto_speaker_incall_only_title">Only while in call</string>
     <string name="prox_auto_speaker_incall_only_summary_on">On outgoing calls, listener will only become active after the receiving party answers</string>
-    <string name="prox_auto_speaker_incall_only_summary_off">Listener will be active during all offhook call states (default)</string>    
+    <string name="prox_auto_speaker_incall_only_summary_off">Listener will be active during all offhook call states (default)</string>
+
+    <!-- Dialer postcall -->
+    <string name="enable_post_call_title">Post call snackbar</string>
+    <string name="enable_post_call_summary">Enable post call notifications at the bottom of screen</string>
 </resources>

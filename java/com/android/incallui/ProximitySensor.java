@@ -55,6 +55,9 @@ public class ProximitySensor
   private static final String TAG = ProximitySensor.class.getSimpleName();
   private static final String PREF_KEY_DISABLE_PROXI_SENSOR = "disable_proximity_sensor_key";
   private static final String PREF_PROXIMITY_AUTO_ANSWER_INCALL_ONLY  = "proximity_auto_answer_incall_only";
+  private static final String PREF_PROXIMITY_AUTO_ANSWER_CALL  = "proximity_auto_answer_call";
+  private static final String PREF_PROXIMITY_AUTO_ANSWER_CALL_DELAY  = "proximity_auto_answer_delay";
+
   private static final int SENSOR_SENSITIVITY = 4;
 
   private final PowerManager powerManager;
@@ -74,6 +77,7 @@ public class ProximitySensor
   private boolean proximitySpeaker = false;
   private boolean isProxSensorNear = false;
   private boolean isProxSensorFar = true;
+  private int answerDelay = 5000;
   private int proxSpeakerDelay = 3000;
   private boolean dialpadVisible;
   private boolean isAttemptingVideoCall;
@@ -84,11 +88,21 @@ public class ProximitySensor
   private SharedPreferences mPrefs;
 
   private final Handler handler = new Handler();
-  private final Runnable activateSpeaker = new Runnable() {
+  private final Handler handlerAnswer = new Handler();
 
-  @Override
-  public void run() {
-        TelecomAdapter.getInstance().setAudioRoute(CallAudioState.ROUTE_SPEAKER);
+  private final Runnable activateSpeaker = new Runnable() {
+      @Override
+      public void run() {
+            TelecomAdapter.getInstance().setAudioRoute(CallAudioState.ROUTE_SPEAKER);
+      }
+  };
+
+  private final Runnable answerCall = new Runnable() {
+      @Override
+      public void run() {
+        	if (hasIncomingCall) {
+        	    telecomManager.acceptRingingCall();
+        	}
       }
   };
 
@@ -392,11 +406,21 @@ public class ProximitySensor
     }
 
   private void answerProx(boolean isNear) {
-    final boolean proxIncallAnswPref =
+    handlerAnswer.removeCallbacks(answerCall);
+    final int audioRoute = audioModeProvider.getAudioState().getRoute();
+    final boolean proxIncallAnswer =
                 mPrefs.getBoolean(PREF_PROXIMITY_AUTO_ANSWER_INCALL_ONLY, false);
-    if (isNear && telecomManager != null && !isScreenReallyOff() && proxIncallAnswPref) {
-      telecomManager.acceptRingingCall();
+    final int proxAutoAnswerDelay =
+                mPrefs.getInt(PREF_PROXIMITY_AUTO_ANSWER_CALL_DELAY, 5000);
+    final boolean proxAutoAnswer =
+                mPrefs.getBoolean(PREF_PROXIMITY_AUTO_ANSWER_CALL, false);
+    if (isNear && telecomManager != null && !isScreenReallyOff() && proxIncallAnswer) {
+        telecomManager.acceptRingingCall();
     }
+  	if (proxAutoAnswer && (audioRoute == CallAudioState.ROUTE_WIRED_HEADSET
+  								  || audioRoute == CallAudioState.ROUTE_BLUETOOTH)) {
+        handlerAnswer.postDelayed(answerCall, proxAutoAnswerDelay);
+  	}
   }
 
   private void setProxSpeaker(final boolean speaker) {

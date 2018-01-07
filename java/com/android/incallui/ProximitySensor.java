@@ -39,6 +39,8 @@ import com.android.incallui.audiomode.AudioModeProvider;
 import com.android.incallui.audiomode.AudioModeProvider.AudioModeListener;
 import com.android.incallui.call.CallList;
 import com.android.incallui.call.DialerCall;
+import com.android.dialer.app.settings.OtherSettingsFragment;
+import android.preference.PreferenceManager;
 
 /**
  * Class manages the proximity sensor for the in-call UI. We enable the proximity sensor while the
@@ -51,6 +53,7 @@ public class ProximitySensor
     implements AccelerometerListener.ChangeListener, InCallStateListener, AudioModeListener, SensorEventListener {
 
   private static final String TAG = ProximitySensor.class.getSimpleName();
+  private static final String PREF_KEY_DISABLE_PROXI_SENSOR = "disable_proximity_sensor_key";
 
   private final PowerManager powerManager;
   private final PowerManager.WakeLock proximityWakeLock;
@@ -73,7 +76,7 @@ public class ProximitySensor
   private boolean isRttCall;
   private Context context;
 
-  private SharedPreferences prefs;
+  private SharedPreferences mPrefs;
 
   private final Handler handler = new Handler();
   private final Runnable activateSpeaker = new Runnable() {
@@ -90,17 +93,23 @@ public class ProximitySensor
     Trace.beginSection("ProximitySensor.Constructor");
     this.context = context;
     powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-    if (powerManager.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) {
+
+    mPrefs = PreferenceManager.getDefaultSharedPreferences(context);
+    final boolean mIsProximitySensorDisabled = mPrefs.getBoolean(PREF_KEY_DISABLE_PROXI_SENSOR, false);
+
+    if (powerManager.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)
+          && !mIsProximitySensorDisabled) {
       proximityWakeLock =
           powerManager.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, TAG);
-    } else {
-      LogUtil.i("ProximitySensor.constructor", "Device does not support proximity wake lock.");
-      proximityWakeLock = null;
-    }
-    if (powerManager.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) {
       sensorManager = (SensorManager) context.getSystemService(Context.SENSOR_SERVICE);
       proxSensor = sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY);
+    } else if (mIsProximitySensorDisabled) {
+      turnOffProximitySensor(true); // Ensure the wakelock is released before destroying it.
+      proximityWakeLock = null;
+      proxSensor = null;
+      sensorManager = null;
     } else {
+      proximityWakeLock = null;
       proxSensor = null;
       sensorManager = null;
     }
@@ -115,7 +124,6 @@ public class ProximitySensor
     this.audioModeProvider = audioModeProvider;
     this.audioModeProvider.addListener(this);
 
-    prefs = PreferenceManager.getDefaultSharedPreferences(context);
     Trace.endSection();
   }
 
@@ -295,6 +303,12 @@ public class ProximitySensor
     Trace.beginSection("ProximitySensor.updateProximitySensorMode");
     final int audioRoute = audioModeProvider.getAudioState().getRoute();
 
+    final boolean mIsProximitySensorDisabled = mPrefs.getBoolean(PREF_KEY_DISABLE_PROXI_SENSOR, false);
+
+    if (mIsProximitySensorDisabled) {
+        return;
+    }
+
     boolean screenOnImmediately =
         (CallAudioState.ROUTE_WIRED_HEADSET == audioRoute
             || CallAudioState.ROUTE_SPEAKER == audioRoute
@@ -357,11 +371,11 @@ public class ProximitySensor
 
     final int audioState = audioModeProvider.getAudioState().getRoute();
     final boolean isProxSpeakerEnabled =
-        prefs.getBoolean("proximity_auto_speaker", false);
+        mPrefs.getBoolean("proximity_auto_speaker", false);
     final boolean proxSpeakerIncallOnlyPref =
-        prefs.getBoolean("proximity_auto_speaker_incall_only", false);
+        mPrefs.getBoolean("proximity_auto_speaker_incall_only", false);
     final int proxSpeakerDelay = Integer.valueOf(
-        prefs.getString("proximity_auto_speaker_delay", "3000"));
+        mPrefs.getString("proximity_auto_speaker_delay", "3000"));
 
     // if phone off hook (call in session), and prox speaker feature is on
     if (isPhoneOffhook && isProxSpeakerEnabled

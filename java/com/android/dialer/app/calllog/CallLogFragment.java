@@ -310,7 +310,7 @@ public class CallLogFragment extends Fragment
     recyclerView.setLayoutManager(layoutManager);
     PerformanceReport.logOnScrollStateChange(recyclerView);
     emptyListView = (EmptyContentView) view.findViewById(R.id.empty_list_view);
-    emptyListView.setImage(R.drawable.empty_call_log);
+    emptyListView.setImage(R.drawable.oneplus_empty_call_log_illustration);
     emptyListView.setActionClickedListener(this);
     modalAlertView = (ViewGroup) view.findViewById(R.id.modal_message_container);
     modalAlertManager =
@@ -435,8 +435,6 @@ public class CallLogFragment extends Fragment
   @Override
   public void onPause() {
     LogUtil.enterBlock("CallLogFragment.onPause");
-    getActivity().getContentResolver().unregisterContentObserver(callLogObserver);
-    getActivity().getContentResolver().unregisterContentObserver(contactsObserver);
     if (getUserVisibleHint()) {
       onNotVisible();
     }
@@ -467,6 +465,10 @@ public class CallLogFragment extends Fragment
   @Override
   public void onDestroy() {
     LogUtil.enterBlock("CallLogFragment.onDestroy");
+    if (callLogObserver != null) {
+       getActivity().getContentResolver().unregisterContentObserver(callLogObserver);
+    }
+    getActivity().getContentResolver().unregisterContentObserver(contactsObserver);
     if (adapter != null) {
       adapter.changeCursor(null);
     }

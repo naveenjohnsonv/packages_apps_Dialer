@@ -17,20 +17,30 @@
 package com.android.incallui;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.DisplayManager.DisplayListener;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.os.Handler;
 import android.os.PowerManager;
 import android.os.Trace;
+import android.preference.PreferenceManager;
 import android.support.annotation.NonNull;
 import android.telecom.CallAudioState;
+import android.telecom.TelecomManager;
 import android.view.Display;
 import com.android.dialer.common.LogUtil;
 import com.android.incallui.InCallPresenter.InCallState;
 import com.android.incallui.InCallPresenter.InCallStateListener;
+import com.android.incallui.call.TelecomAdapter;
 import com.android.incallui.audiomode.AudioModeProvider;
 import com.android.incallui.audiomode.AudioModeProvider.AudioModeListener;
 import com.android.incallui.call.CallList;
 import com.android.incallui.call.DialerCall;
+import com.android.dialer.app.settings.OtherSettingsFragment;
 
 /**
  * Class manages the proximity sensor for the in-call UI. We enable the proximity sensor while the
@@ -40,35 +50,89 @@ import com.android.incallui.call.DialerCall;
  * and disabled. Most of that state is fed into this class through public methods.
  */
 public class ProximitySensor
-    implements AccelerometerListener.OrientationListener, InCallStateListener, AudioModeListener {
+    implements AccelerometerListener.ChangeListener, InCallStateListener, AudioModeListener, SensorEventListener {
 
   private static final String TAG = ProximitySensor.class.getSimpleName();
+  private static final String PREF_KEY_DISABLE_PROXI_SENSOR = "disable_proximity_sensor_key";
+  private static final String PREF_PROXIMITY_AUTO_ANSWER_INCALL_ONLY  = "proximity_auto_answer_incall_only";
+  private static final String PREF_PROXIMITY_AUTO_ANSWER_CALL  = "proximity_auto_answer_call";
+  private static final String PREF_PROXIMITY_AUTO_ANSWER_CALL_DELAY  = "proximity_auto_answer_delay";
+
+  private static final int SENSOR_SENSITIVITY = 4;
 
   private final PowerManager powerManager;
   private final PowerManager.WakeLock proximityWakeLock;
+  private SensorManager sensorManager;
+  private Sensor proxSensor;
   private final AudioModeProvider audioModeProvider;
   private final AccelerometerListener accelerometerListener;
   private final ProximityDisplayListener displayListener;
+  private final TelecomManager telecomManager;
   private int orientation = AccelerometerListener.ORIENTATION_UNKNOWN;
   private boolean uiShowing = false;
+  private boolean hasIncomingCall = false;
   private boolean isPhoneOffhook = false;
+  private boolean isPhoneOutgoing = false;
+  private boolean isPhoneRinging = false;
+  private boolean proximitySpeaker = false;
+  private boolean isProxSensorNear = false;
+  private boolean isProxSensorFar = true;
+  private int answerDelay = 5000;
+  private int proxSpeakerDelay = 3000;
   private boolean dialpadVisible;
   private boolean isAttemptingVideoCall;
   private boolean isVideoCall;
   private boolean isRttCall;
+  private Context context;
+
+  private SharedPreferences mPrefs;
+
+  private final Handler handler = new Handler();
+  private final Handler handlerAnswer = new Handler();
+
+  private final Runnable activateSpeaker = new Runnable() {
+      @Override
+      public void run() {
+            TelecomAdapter.getInstance().setAudioRoute(CallAudioState.ROUTE_SPEAKER);
+      }
+  };
+
+  private final Runnable answerCall = new Runnable() {
+      @Override
+      public void run() {
+        	if (hasIncomingCall) {
+        	    telecomManager.acceptRingingCall();
+        	}
+      }
+  };
 
   public ProximitySensor(
       @NonNull Context context,
       @NonNull AudioModeProvider audioModeProvider,
       @NonNull AccelerometerListener accelerometerListener) {
     Trace.beginSection("ProximitySensor.Constructor");
+    this.context = context;
     powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-    if (powerManager.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) {
+    telecomManager = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
+
+    mPrefs = PreferenceManager.getDefaultSharedPreferences(context);
+    final boolean mIsProximitySensorDisabled = mPrefs.getBoolean(PREF_KEY_DISABLE_PROXI_SENSOR, false);
+
+    if (powerManager.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)
+          && !mIsProximitySensorDisabled) {
       proximityWakeLock =
           powerManager.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, TAG);
-    } else {
-      LogUtil.i("ProximitySensor.constructor", "Device does not support proximity wake lock.");
+      sensorManager = (SensorManager) context.getSystemService(Context.SENSOR_SERVICE);
+      proxSensor = sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY);
+    } else if (mIsProximitySensorDisabled) {
+      turnOffProximitySensor(true); // Ensure the wakelock is released before destroying it.
       proximityWakeLock = null;
+      proxSensor = null;
+      sensorManager = null;
+    } else {
+      proximityWakeLock = null;
+      proxSensor = null;
+      sensorManager = null;
     }
     this.accelerometerListener = accelerometerListener;
     this.accelerometerListener.setListener(this);
@@ -80,6 +144,7 @@ public class ProximitySensor
 
     this.audioModeProvider = audioModeProvider;
     this.audioModeProvider.addListener(this);
+
     Trace.endSection();
   }
 
@@ -90,13 +155,25 @@ public class ProximitySensor
     displayListener.unregister();
 
     turnOffProximitySensor(true);
+
+    if (sensorManager != null) {
+      sensorManager.unregisterListener(this);
+    }
+
+    // remove any pending audio changes scheduled
+    handler.removeCallbacks(activateSpeaker);
   }
 
   /** Called to identify when the device is laid down flat. */
   @Override
-  public void orientationChanged(int orientation) {
+  public void onOrientationChanged(int orientation) {
     this.orientation = orientation;
     updateProximitySensorMode();
+  }
+
+  @Override
+  public void onDeviceFlipped(boolean faceDown) {
+      // ignored
   }
 
   /** Called to keep track of the overall UI state. */
@@ -110,6 +187,8 @@ public class ProximitySensor
         InCallState.PENDING_OUTGOING == newState
             || InCallState.OUTGOING == newState
             || hasOngoingCall;
+    hasIncomingCall = (InCallState.INCOMING == newState);
+    isPhoneOutgoing = (InCallState.OUTGOING == newState);
 
     DialerCall activeCall = callList.getActiveCall();
     boolean isVideoCall = activeCall != null && activeCall.isVideoCall();
@@ -125,6 +204,18 @@ public class ProximitySensor
       orientation = AccelerometerListener.ORIENTATION_UNKNOWN;
       accelerometerListener.enable(isPhoneOffhook);
 
+      updateProxSpeaker();
+      updateProximitySensorMode();
+    }
+
+    if (hasOngoingCall && InCallState.OUTGOING == oldState) {
+      setProxSpeaker(isProxSensorFar);
+      updateProximitySensorMode();
+    }
+
+    if (hasIncomingCall) {
+      updateProxRing();
+      answerProx(isProxSensorNear);
       updateProximitySensorMode();
     }
   }
@@ -132,6 +223,30 @@ public class ProximitySensor
   @Override
   public void onAudioStateChanged(CallAudioState audioState) {
     updateProximitySensorMode();
+  }
+
+  /**
+   * Proximity state changed
+   */
+  @Override
+  public void onSensorChanged(SensorEvent event) {
+    if (event.values[0] != proxSensor.getMaximumRange()) {
+      isProxSensorFar = false;
+    } else {
+      isProxSensorFar = true;
+      isProxSensorNear = false;
+    }
+
+    if (event.values[0] <= SENSOR_SENSITIVITY ) {
+        isProxSensorNear = true;
+    }
+    Log.i(this, "Proximity sensor changed");
+    setProxSpeaker(isProxSensorFar);
+    answerProx(isProxSensorNear);
+  }
+
+  @Override
+  public void onAccuracyChanged(Sensor sensor, int accuracy) {
   }
 
   public void onDialpadVisible(boolean visible) {
@@ -217,6 +332,12 @@ public class ProximitySensor
     Trace.beginSection("ProximitySensor.updateProximitySensorMode");
     final int audioRoute = audioModeProvider.getAudioState().getRoute();
 
+    final boolean mIsProximitySensorDisabled = mPrefs.getBoolean(PREF_KEY_DISABLE_PROXI_SENSOR, false);
+
+    if (mIsProximitySensorDisabled) {
+        return;
+    }
+
     boolean screenOnImmediately =
         (CallAudioState.ROUTE_WIRED_HEADSET == audioRoute
             || CallAudioState.ROUTE_SPEAKER == audioRoute
@@ -248,7 +369,7 @@ public class ProximitySensor
         uiShowing,
         CallAudioState.audioRouteToString(audioRoute));
 
-    if (isPhoneOffhook && !screenOnImmediately) {
+    if ((isPhoneOffhook || hasIncomingCall) && !screenOnImmediately) {
       LogUtil.v("ProximitySensor.updateProximitySensorMode", "turning on proximity sensor");
       // Phone is in use!  Arrange for the screen to turn off
       // automatically when the sensor detects a close object.
@@ -260,6 +381,82 @@ public class ProximitySensor
       turnOffProximitySensor(screenOnImmediately);
     }
     Trace.endSection();
+  }
+
+  private void updateProxSpeaker() {
+    if (sensorManager != null && proxSensor != null) {
+      if (isPhoneOffhook) {
+        sensorManager.registerListener(this, proxSensor,
+            SensorManager.SENSOR_DELAY_NORMAL);
+      } else {
+        sensorManager.unregisterListener(this);
+      }
+    }
+  }
+
+  private void updateProxRing() {
+        if (sensorManager != null && proxSensor != null) {
+            if (hasIncomingCall) {
+                sensorManager.registerListener(this, proxSensor,
+                        SensorManager.SENSOR_DELAY_NORMAL);
+            } else {
+                sensorManager.unregisterListener(this);
+            }
+        }
+    }
+
+  private void answerProx(boolean isNear) {
+    handlerAnswer.removeCallbacks(answerCall);
+    final int audioRoute = audioModeProvider.getAudioState().getRoute();
+    final boolean proxIncallAnswer =
+                mPrefs.getBoolean(PREF_PROXIMITY_AUTO_ANSWER_INCALL_ONLY, false);
+    final int proxAutoAnswerDelay =
+                mPrefs.getInt(PREF_PROXIMITY_AUTO_ANSWER_CALL_DELAY, 5000);
+    final boolean proxAutoAnswer =
+                mPrefs.getBoolean(PREF_PROXIMITY_AUTO_ANSWER_CALL, false);
+    if (isNear && telecomManager != null && !isScreenReallyOff() && proxIncallAnswer) {
+        telecomManager.acceptRingingCall();
+    }
+  	if (proxAutoAnswer && (audioRoute == CallAudioState.ROUTE_WIRED_HEADSET
+  								  || audioRoute == CallAudioState.ROUTE_BLUETOOTH)) {
+        handlerAnswer.postDelayed(answerCall, proxAutoAnswerDelay);
+  	}
+  }
+
+  private void setProxSpeaker(final boolean speaker) {
+    // remove any pending audio changes scheduled
+    handler.removeCallbacks(activateSpeaker);
+
+    final int audioState = audioModeProvider.getAudioState().getRoute();
+    final boolean isProxSpeakerEnabled =
+        mPrefs.getBoolean("proximity_auto_speaker", false);
+    final boolean proxSpeakerIncallOnlyPref =
+        mPrefs.getBoolean("proximity_auto_speaker_incall_only", false);
+    final int proxSpeakerDelay = Integer.valueOf(
+        mPrefs.getString("proximity_auto_speaker_delay", "3000"));
+
+    // if phone off hook (call in session), and prox speaker feature is on
+    if (isPhoneOffhook && isProxSpeakerEnabled
+        // as long as AudioState isn't currently wired headset or bluetooth
+        && audioState != CallAudioState.ROUTE_WIRED_HEADSET
+        && audioState != CallAudioState.ROUTE_BLUETOOTH) {
+       // okay, we're good to start switching audio mode on proximity
+       // if proximity sensor determines audio mode should be speaker,
+      // but it currently isn't
+      if (speaker && audioState != CallAudioState.ROUTE_SPEAKER) {
+
+        // if prox incall only is off, we set to speaker as long as phone
+        // is off hook, ignoring whether or not the call state is outgoing
+        if (!proxSpeakerIncallOnlyPref
+            // or if prox incall only is on, we have to check the call
+            // state to decide if AudioState should be speaker
+            || (proxSpeakerIncallOnlyPref && !isPhoneOutgoing)) {
+          handler.postDelayed(activateSpeaker, proxSpeakerDelay);
+        }
+      } else if (!speaker) {
+        TelecomAdapter.getInstance().setAudioRoute(CallAudioState.ROUTE_EARPIECE);
+      }
+    }
   }
 
   /**

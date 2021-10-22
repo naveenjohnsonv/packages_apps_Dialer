@@ -16,13 +16,15 @@
 
 package com.android.incallui.incall.impl;
 
-import android.graphics.drawable.AnimationDrawable;
+import android.content.res.Resources;
+import android.graphics.drawable.Drawable;
 import android.support.annotation.CallSuper;
 import android.support.annotation.DrawableRes;
 import android.support.annotation.NonNull;
 import android.support.annotation.StringRes;
 import android.telecom.CallAudioState;
 import android.text.TextUtils;
+import android.text.format.DateUtils;
 import android.view.View;
 import android.view.View.OnClickListener;
 import com.android.dialer.common.Assert;
@@ -292,7 +294,7 @@ interface ButtonController {
           R.string.incall_content_description_muted,
           R.string.incall_content_description_unmuted,
           R.string.incall_label_mute,
-          R.drawable.quantum_ic_mic_off_vd_theme_24);
+          R.drawable.op_ic_toolbar_mute_normal);
     }
 
     @Override
@@ -411,6 +413,95 @@ interface ButtonController {
     }
   }
 
+  class CallRecordButtonController implements ButtonController, OnClickListener {
+    @NonNull private final InCallButtonUiDelegate delegate;
+    private boolean isEnabled;
+    private boolean isAllowed;
+    private boolean isChecked;
+    private long recordingSeconds;
+    private CheckableLabeledButton button;
+
+    public CallRecordButtonController(@NonNull InCallButtonUiDelegate delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public boolean isEnabled() {
+      return isEnabled;
+    }
+
+    @Override
+    public void setEnabled(boolean isEnabled) {
+      this.isEnabled = isEnabled;
+      if (button != null) {
+        button.setEnabled(isEnabled);
+      }
+    }
+
+    @Override
+    public boolean isAllowed() {
+      return isAllowed;
+    }
+
+    @Override
+    public void setAllowed(boolean isAllowed) {
+      this.isAllowed = isAllowed;
+      if (button != null) {
+        button.setVisibility(isAllowed ? View.VISIBLE : View.INVISIBLE);
+      }
+    }
+
+    @Override
+    public void setChecked(boolean isChecked) {
+      this.isChecked = isChecked;
+      if (button != null) {
+        button.setChecked(isChecked);
+      }
+    }
+
+    @Override
+    public int getInCallButtonId() {
+      return InCallButtonIds.BUTTON_RECORD_CALL;
+    }
+
+    @Override
+    public void setButton(CheckableLabeledButton button) {
+      this.button = button;
+      if (button != null) {
+        final Resources res = button.getContext().getResources();
+        if (isChecked) {
+          CharSequence duration = DateUtils.formatElapsedTime(recordingSeconds);
+          button.setLabelText(res.getString(R.string.onscreenCallRecordingText, duration));
+        } else {
+          button.setLabelText(R.string.onscreenCallRecordText);
+        }
+        button.setEnabled(isEnabled);
+        button.setVisibility(isAllowed ? View.VISIBLE : View.INVISIBLE);
+        button.setChecked(isChecked);
+        button.setOnClickListener(this);
+        button.setIconDrawable(R.drawable.op_ic_toolbar_record_normal);
+        button.setContentDescription(res.getText(
+            isChecked ? R.string.onscreenStopCallRecordText : R.string.onscreenCallRecordText));
+        button.setShouldShowMoreIndicator(false);
+      }
+    }
+
+    public void setRecordingState(boolean recording) {
+      isChecked = recording;
+      setButton(button);
+    }
+
+    public void setRecordingDuration(long durationMs) {
+      recordingSeconds = (durationMs + 500) / 1000;
+      setButton(button);
+    }
+
+    @Override
+    public void onClick(View v) {
+      delegate.callRecordClicked(!isChecked);
+    }
+  }
+
   class DialpadButtonController extends SimpleCheckableButtonController {
 
     public DialpadButtonController(@NonNull InCallButtonUiDelegate delegate) {
@@ -420,7 +511,7 @@ interface ButtonController {
           0,
           0,
           R.string.incall_label_dialpad,
-          R.drawable.quantum_ic_dialpad_vd_theme_24);
+          R.drawable.op_ic_toolbar_dialpad_normal);
     }
 
     @Override
@@ -438,7 +529,7 @@ interface ButtonController {
           R.string.incall_content_description_unhold,
           R.string.incall_content_description_hold,
           R.string.incall_label_hold,
-          R.drawable.quantum_ic_pause_vd_theme_24);
+          R.drawable.op_ic_pause);
     }
 
     @Override
@@ -455,7 +546,7 @@ interface ButtonController {
           InCallButtonIds.BUTTON_ADD_CALL,
           0,
           R.string.incall_label_add_call,
-          R.drawable.ic_addcall_white);
+          R.drawable.op_ic_toolbar_addcall_normal);
       Assert.isNotNull(delegate);
     }
 
@@ -473,7 +564,7 @@ interface ButtonController {
           InCallButtonIds.BUTTON_SWAP,
           R.string.incall_content_description_swap_calls,
           R.string.incall_label_swap,
-          R.drawable.quantum_ic_swap_calls_vd_theme_24);
+          R.drawable.op_ic_toolbar_swap_normal);
       Assert.isNotNull(delegate);
     }
 
@@ -491,7 +582,7 @@ interface ButtonController {
           InCallButtonIds.BUTTON_MERGE,
           R.string.incall_content_description_merge_calls,
           R.string.incall_label_merge,
-          R.drawable.quantum_ic_call_merge_vd_theme_24);
+          R.drawable.op_ic_toolbar_merge_normal);
       Assert.isNotNull(delegate);
     }
 
@@ -509,7 +600,7 @@ interface ButtonController {
           InCallButtonIds.BUTTON_UPGRADE_TO_VIDEO,
           0,
           R.string.incall_label_videocall,
-          R.drawable.quantum_ic_videocam_vd_theme_24);
+          R.drawable.op_ic_videocam);
       Assert.isNotNull(delegate);
     }
 
@@ -568,7 +659,7 @@ interface ButtonController {
           InCallButtonIds.BUTTON_SWITCH_TO_SECONDARY,
           R.string.incall_content_description_swap_calls,
           R.string.incall_label_swap,
-          R.drawable.quantum_ic_swap_calls_vd_theme_24);
+          R.drawable.op_ic_toolbar_swap_normal);
       Assert.isNotNull(inCallScreenDelegate);
       this.inCallScreenDelegate = inCallScreenDelegate;
     }
@@ -587,14 +678,12 @@ interface ButtonController {
           InCallButtonIds.BUTTON_SWAP_SIM,
           R.string.incall_content_description_swap_sim,
           R.string.incall_label_swap_sim,
-          R.drawable.ic_sim_change_white);
+          R.drawable.op_ic_sim_change_white);
     }
 
     @Override
     public void onClick(View view) {
-      AnimationDrawable drawable = (AnimationDrawable) button.getIconDrawable();
-      drawable.stop(); // animation is one shot, stop it so it can be started again.
-      drawable.start();
+      Drawable drawable = (Drawable) button.getIconDrawable();
       delegate.swapSimClicked();
     }
   }

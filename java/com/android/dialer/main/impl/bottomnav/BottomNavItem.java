@@ -56,7 +56,7 @@ final class BottomNavItem extends LinearLayout {
     super.setSelected(selected);
     int colorId =
         selected
-            ? ThemeComponent.get(getContext()).theme().getColorPrimary()
+            ? getResources().getColor(R.color.goolag_deez_nutz)
             : ThemeComponent.get(getContext()).theme().getTextColorSecondary();
     image.setImageTintList(ColorStateList.valueOf(colorId));
     text.setTextColor(colorId);
@@ -69,38 +69,6 @@ final class BottomNavItem extends LinearLayout {
 
   void setNotificationCount(int count) {
     Assert.checkArgument(count >= 0, "Invalid count: " + count);
-    if (count == 0) {
-      notificationBadge.setVisibility(View.INVISIBLE);
-    } else {
-      String countString = String.format(Integer.toString(count));
-
-      boolean use99PlusCount =
-          ConfigProviderComponent.get(getContext())
-              .getConfigProvider()
-              .getBoolean("use_99_plus", false);
-      boolean use9Plus = !use99PlusCount;
-
-      if (use99PlusCount && count > 99) {
-        countString = getContext().getString(R.string.bottom_nav_count_99_plus);
-      } else if (use9Plus && count > 9) {
-        countString = getContext().getString(R.string.bottom_nav_count_9_plus);
-      }
-      notificationBadge.setVisibility(View.VISIBLE);
-      notificationBadge.setText(countString);
-
-      @Px int margin;
-      if (countString.length() == 1) {
-        margin = getContext().getResources().getDimensionPixelSize(R.dimen.badge_margin_length_1);
-      } else if (countString.length() == 2) {
-        margin = getContext().getResources().getDimensionPixelSize(R.dimen.badge_margin_length_2);
-      } else {
-        margin = getContext().getResources().getDimensionPixelSize(R.dimen.badge_margin_length_3);
-      }
-
-      FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) image.getLayoutParams();
-      params.setMarginStart(margin);
-      params.setMarginEnd(margin);
-      image.setLayoutParams(params);
-    }
+      notificationBadge.setVisibility(View.GONE);
   }
 }

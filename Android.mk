@@ -79,6 +79,8 @@ LOCAL_SRC_FILES += $(call all-proto-files-under, $(BASE_DIR))
 LOCAL_SRC_FILES += $(call all-Iaidl-files-under, $(BASE_DIR))
 LOCAL_SRC_FILES := $(filter-out $(EXCLUDE_FILES),$(LOCAL_SRC_FILES))
 
+LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/java
+
 LOCAL_PROTOC_FLAGS := --proto_path=$(LOCAL_PATH)
 
 LOCAL_RESOURCE_DIR := $(addprefix $(LOCAL_PATH)/, $(RES_DIRS))
@@ -130,7 +132,7 @@ LOCAL_STATIC_JAVA_LIBRARIES := \
 	jsr305 \
 	libbackup \
 	libphonenumber \
-	volley \
+	volley
 
 LOCAL_STATIC_ANDROID_LIBRARIES := \
 	android-support-core-ui \
@@ -177,11 +179,21 @@ LOCAL_PRODUCT_MODULE := true
 LOCAL_USE_AAPT2 := true
 LOCAL_REQUIRED_MODULES := privapp_whitelist_com.android.dialer
 LOCAL_USES_LIBRARIES := org.apache.http.legacy
+LOCAL_REQUIRED_MODULES += privapp_whitelist_com.android.dialer-ext.xml
 
 LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
 LOCAL_LICENSE_CONDITIONS := notice
 LOCAL_NOTICE_FILE := $(LOCAL_PATH)/LICENSE
 include $(BUILD_PACKAGE)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := privapp_whitelist_com.android.dialer-ext.xml
+LOCAL_MODULE_CLASS := ETC
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_PATH := $(TARGET_OUT_PRODUCT_ETC)/permissions
+LOCAL_PRODUCT_MODULE := true
+LOCAL_SRC_FILES := $(LOCAL_MODULE)
+include $(BUILD_PREBUILT)
 
 # Cleanup local state
 BASE_DIR :=
@@ -411,6 +423,19 @@ include $(BUILD_PREBUILT)
 include $(CLEAR_VARS)
 
 LOCAL_MODULE_CLASS := JAVA_LIBRARIES
+LOCAL_MODULE := dialer-okio-target
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
+LOCAL_LICENSE_CONDITIONS := notice
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/LICENSE
+LOCAL_SDK_VERSION := current
+LOCAL_SRC_FILES := ../../../prebuilts/tools/common/m2/repository/com/squareup/okio/okio/1.9.0/okio-1.9.0.jar
+LOCAL_UNINSTALLABLE_MODULE := true
+
+include $(BUILD_PREBUILT)
+
+include $(CLEAR_VARS)
+
+LOCAL_MODULE_CLASS := JAVA_LIBRARIES
 LOCAL_MODULE := dialer-grpc-protobuf-lite-target
 LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
 LOCAL_LICENSE_CONDITIONS := notice
@@ -483,19 +508,6 @@ LOCAL_LICENSE_CONDITIONS := notice
 LOCAL_NOTICE_FILE := $(LOCAL_PATH)/LICENSE
 LOCAL_SDK_VERSION := current
 LOCAL_SRC_FILES := ../../../prebuilts/tools/common/m2/repository/com/squareup/okhttp/okhttp/2.7.4/okhttp-2.7.4.jar
-LOCAL_UNINSTALLABLE_MODULE := true
-
-include $(BUILD_PREBUILT)
-
-include $(CLEAR_VARS)
-
-LOCAL_MODULE_CLASS := JAVA_LIBRARIES
-LOCAL_MODULE := dialer-okio-target
-LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
-LOCAL_LICENSE_CONDITIONS := notice
-LOCAL_NOTICE_FILE := $(LOCAL_PATH)/LICENSE
-LOCAL_SDK_VERSION := current
-LOCAL_SRC_FILES := ../../../prebuilts/tools/common/m2/repository/com/squareup/okio/okio/1.9.0/okio-1.9.0.jar
 LOCAL_UNINSTALLABLE_MODULE := true
 
 include $(BUILD_PREBUILT)

@@ -257,8 +257,7 @@ public class SearchEditTextLayout extends FrameLayout {
     }
 
     isExpanded = false;
-    setElevation(collapsedElevation);
-    setBackgroundResource(R.drawable.rounded_corner);
+    setElevation(0);
   }
 
   /**
